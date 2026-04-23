@@ -6,7 +6,6 @@ RES=$(curl -s -X POST $BASE/api/users/register -H "Content-Type: application/jso
 echo $RES
 
 echo -e "\n\n2. Login"
-curl -s -X POST $BASE/api/users/login -H "Content-Type: application/json" -d '{"login":"user11","password":"pass"}'
 TOKEN=$(curl -s -X POST $BASE/api/users/login -H "Content-Type: application/json" -d '{"login":"user11","password":"pass"}' | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
 echo "Token: $TOKEN"
 

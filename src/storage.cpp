@@ -31,7 +31,12 @@ static std::string hashPassword(const std::string& password) {
 
 static bool verifyPassword(const std::string& password, const std::string& hash) {
     std::string computedHash = hashPassword(password);
-    return computedHash == hash;
+    // Удаляем кавычки, если они есть
+    std::string cleanHash = hash;
+    if (!cleanHash.empty() && cleanHash.front() == '"' && cleanHash.back() == '"') {
+        cleanHash = cleanHash.substr(1, cleanHash.size() - 2);
+    }
+    return computedHash == cleanHash;
 }
 
 // Helper function to safely get string from document
@@ -85,27 +90,32 @@ Storage::Storage() {
 int Storage::createUser(const std::string& login, const std::string& pass, const std::string& fn, const std::string& ln) {
     try {
         // Check if user exists
-        QueryRequest query("hotel_booking.users");
-        query.selector().add("login", login);
+        Poco::SharedPtr<QueryRequest> findRequest = _database->createQueryRequest("users");
+        findRequest->selector().add("login", login);
         
-        ResponseMessage response;
-        _connection->sendRequest(query, response);
+        Poco::MongoDB::ResponseMessage response;
+        _connection->sendRequest(*findRequest, response);
 
         if (response.documents().size() > 0) {
             std::cout << "User already exists" << std::endl;
             return -1;
         }
 
-        InsertRequest insert("hotel_booking.users");
-        Document& doc = insert.addNewDocument();
+        Poco::SharedPtr<InsertRequest> insertRequest = _database->createInsertRequest("users");
+        Document& doc = insertRequest->addNewDocument();
         doc.add("login", login);
         doc.add("password", hashPassword(pass));
         doc.add("firstName", fn);
         doc.add("lastName", ln);
-        doc.add("createdAt", Poco::Timestamp().epochTime());
-        doc.add("updatedAt", Poco::Timestamp().epochTime());
+        // doc.add("createdAt", Poco::Timestamp().epochTime());
+        // doc.add("updatedAt", Poco::Timestamp().epochTime());
         
-        _connection->sendRequest(insert);
+        _connection->sendRequest(*insertRequest);
+        std::string lastError = _database->getLastError(*_connection);
+        if (!lastError.empty()) {
+            std::cerr << "mongodb Last Error: " << lastError << std::endl;
+            return -1;
+        }
         
         return std::hash<std::string>{}(login) % INT_MAX;
     } catch (const std::exception& e) {
@@ -119,11 +129,11 @@ User* Storage::findUserByLogin(const std::string& login) {
     u.id = 0;
     
     try {
-        QueryRequest query("hotel_booking.users");
-        query.selector().add("login", login);
+        Poco::SharedPtr<QueryRequest> findRequest = _database->createQueryRequest("users");
+        findRequest->selector().add("login", login);
         
-        ResponseMessage response;
-        _connection->sendRequest(query, response);
+        Poco::MongoDB::ResponseMessage response;
+        _connection->sendRequest(*findRequest, response);
 
         std::cout << "Finding user by login: " << login << std::endl;
         std::cout << "Documents found: " << response.documents().size() << std::endl;
@@ -157,6 +167,7 @@ User* Storage::authenticateUser(const std::string& login, const std::string& pas
     std::cout << "Verifying password for user: " << login << std::endl;
     std::cout << "Password hash in DB: " << user->password << std::endl;
     std::cout << "Computed hash for input password: " << hashPassword(password) << std::endl;
+    std::cout << "Password verification result: " << verifyPassword(password, user->password) << std::endl;        
 
     if (verifyPassword(password, user->password)) {
         return user;
@@ -169,10 +180,10 @@ std::vector<User> Storage::findUsersByMask(const std::string& mask) {
     std::vector<User> res;
     
     try {
-        QueryRequest query("hotel_booking.users");
+        Poco::SharedPtr<QueryRequest> findRequest = _database->createQueryRequest("users");
         
-        ResponseMessage response;
-        _connection->sendRequest(query, response);
+        Poco::MongoDB::ResponseMessage response;
+        _connection->sendRequest(*findRequest, response);
         
         for (const auto& doc : response.documents()) {
             std::string firstName = getStringFromDoc(doc, "firstName");
@@ -208,15 +219,20 @@ User* Storage::getUserById(int id) {
 
 int Storage::createHotel(const std::string& name, const std::string& city, int stars) {
     try {
-        InsertRequest insert("hotel_booking.hotels");
-        Document& doc = insert.addNewDocument();
+        Poco::SharedPtr<InsertRequest> insertRequest = _database->createInsertRequest("hotels");
+        Document& doc = insertRequest->addNewDocument();
         doc.add("name", name);
         doc.add("city", city);
         doc.add("stars", stars);
-        doc.add("createdAt", Poco::Timestamp().epochTime());
-        doc.add("updatedAt", Poco::Timestamp().epochTime());
+        // doc.add("createdAt", Poco::Timestamp().epochTime());
+        // doc.add("updatedAt", Poco::Timestamp().epochTime());
         
-        _connection->sendRequest(insert);
+        _connection->sendRequest(*insertRequest);
+        std::string lastError = _database->getLastError(*_connection);
+        if (!lastError.empty()) {
+            std::cerr << "mongodb Last Error: " << lastError << std::endl;
+            return -1;
+        }
         
         return std::hash<std::string>{}(name) % INT_MAX;
     } catch (const std::exception& e) {
@@ -229,10 +245,10 @@ std::vector<Hotel> Storage::getAllHotels() {
     std::vector<Hotel> res;
     
     try {
-        QueryRequest query("hotel_booking.hotels");
+        Poco::SharedPtr<QueryRequest> findRequest = _database->createQueryRequest("hotels");
         
-        ResponseMessage response;
-        _connection->sendRequest(query, response);
+        Poco::MongoDB::ResponseMessage response;
+        _connection->sendRequest(*findRequest, response);
         
         for (const auto& doc : response.documents()) {
             Hotel h;
@@ -257,11 +273,11 @@ std::vector<Hotel> Storage::findHotelsByCity(const std::string& city) {
     std::vector<Hotel> res;
     
     try {
-        QueryRequest query("hotel_booking.hotels");
-        query.selector().add("city", city);
+        Poco::SharedPtr<QueryRequest> findRequest = _database->createQueryRequest("hotels");
+        findRequest->selector().add("city", city);
         
-        ResponseMessage response;
-        _connection->sendRequest(query, response);
+        Poco::MongoDB::ResponseMessage response;
+        _connection->sendRequest(*findRequest, response);
         
         for (const auto& doc : response.documents()) {
             Hotel h;
@@ -284,17 +300,22 @@ std::vector<Hotel> Storage::findHotelsByCity(const std::string& city) {
 
 int Storage::createBooking(int userId, int hotelId, const std::string& start, const std::string& end) {
     try {
-        InsertRequest insert("hotel_booking.bookings");
-        Document& doc = insert.addNewDocument();
+        Poco::SharedPtr<InsertRequest> insertRequest = _database->createInsertRequest("bookings");
+        Document& doc = insertRequest->addNewDocument();
         doc.add("userId", userId);
         doc.add("hotelId", hotelId);
         doc.add("startDate", start);
         doc.add("endDate", end);
         doc.add("cancelled", false);
-        doc.add("createdAt", Poco::Timestamp().epochTime());
-        doc.add("updatedAt", Poco::Timestamp().epochTime());
+        // doc.add("createdAt", Poco::Timestamp().epochTime());
+        // doc.add("updatedAt", Poco::Timestamp().epochTime());
         
-        _connection->sendRequest(insert);
+        _connection->sendRequest(*insertRequest);
+        std::string lastError = _database->getLastError(*_connection);
+        if (!lastError.empty()) {
+            std::cerr << "mongodb Last Error: " << lastError << std::endl;
+            return -1;
+        }
         
         return 1;
     } catch (const std::exception& e) {
@@ -307,11 +328,11 @@ std::vector<Booking> Storage::getUserBookings(int userId) {
     std::vector<Booking> res;
     
     try {
-        QueryRequest query("hotel_booking.bookings");
-        query.selector().add("userId", userId);
+        Poco::SharedPtr<QueryRequest> findRequest = _database->createQueryRequest("bookings");
+        findRequest->selector().add("userId", userId);
         
-        ResponseMessage response;
-        _connection->sendRequest(query, response);
+        Poco::MongoDB::ResponseMessage response;
+        _connection->sendRequest(*findRequest, response);
         
         for (const auto& doc : response.documents()) {
             Booking b;
@@ -350,13 +371,18 @@ std::string Storage::createSession(int userId) {
         Poco::UUID uuid = Poco::UUIDGenerator::defaultGenerator().createRandom();
         std::string token = uuid.toString();
         
-        InsertRequest insert("hotel_booking.sessions");
-        Document& doc = insert.addNewDocument();
+        Poco::SharedPtr<InsertRequest> insertRequest = _database->createInsertRequest("sessions");
+        Document& doc = insertRequest->addNewDocument();
         doc.add("_id", token);
         doc.add("userId", userId);
-        doc.add("createdAt", Poco::Timestamp().epochTime());
+        // doc.add("createdAt", Poco::Timestamp().epochTime());
         
-        _connection->sendRequest(insert);
+        _connection->sendRequest(*insertRequest);
+        std::string lastError = _database->getLastError(*_connection);
+        if (!lastError.empty()) {
+            std::cerr << "mongodb Last Error: " << lastError << std::endl;
+            return "";
+        }
         
         return token;
     } catch (const std::exception& e) {
@@ -367,11 +393,11 @@ std::string Storage::createSession(int userId) {
 
 int Storage::validateSession(const std::string& token) {
     try {
-        QueryRequest query("hotel_booking.sessions");
-        query.selector().add("_id", token);
+        Poco::SharedPtr<QueryRequest> findRequest = _database->createQueryRequest("sessions");
+        findRequest->selector().add("_id", token);
         
-        ResponseMessage response;
-        _connection->sendRequest(query, response);
+        Poco::MongoDB::ResponseMessage response;
+        _connection->sendRequest(*findRequest, response);
         
         if (response.documents().empty()) {
             return -1;
@@ -387,11 +413,11 @@ int Storage::validateSession(const std::string& token) {
 
 void Storage::destroySession(const std::string& token) {
     try {
-        DeleteRequest remove("hotel_booking.sessions");
-        remove.selector().add("_id", token);
+        Poco::SharedPtr<DeleteRequest> removeRequest = _database->createDeleteRequest("sessions");
+        removeRequest->selector().add("_id", token);
         
-        ResponseMessage response;
-        _connection->sendRequest(remove, response);
+        Poco::MongoDB::ResponseMessage response;
+        _connection->sendRequest(*removeRequest, response);
     } catch (const std::exception& e) {
         std::cerr << "Error destroying session: " << e.what() << std::endl;
     }
