@@ -21,9 +21,8 @@ curl -s "$BASE/api/hotels?city=Moscow"
 echo -e "\n\n6. Create Booking"
 BOOK_RES=$(curl -s -X POST $BASE/api/bookings -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -d '{"hotelId":1,"startDate":"2023-10-01","endDate":"2023-10-10"}')
 echo $BOOK_RES
-# Извлекаем ID из ответа {"id":число}
-BOOKING_ID=$(echo $BOOK_RES | grep -o '"id":[0-9]*' | cut -d':' -f2)
-echo "Booking ID: $BOOKING_ID"
+# Извлекаем UUID из ответа (любой UUID формат)
+BOOKING_ID=$(echo $BOOK_RES | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
 echo -e "\n\n7. Get Bookings"
 curl -s $BASE/api/bookings -H "Authorization: Bearer $TOKEN"

@@ -206,7 +206,11 @@ void BookingsHandler::handleRequest(HTTPServerRequest& request, HTTPServerRespon
             int hotelId = json->getValue<int>("hotelId");
             std::string start = json->getValue<std::string>("startDate");
             std::string end = json->getValue<std::string>("endDate");
-            int id = Storage::instance().createBooking(userId, hotelId, start, end);
+            std::string id = Storage::instance().createBooking(userId, hotelId, start, end);
+            if (id.empty()) {
+                sendError(response, HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "Failed to create booking");
+                return;
+            }
             Object::Ptr res = new Object();
             res->set("id", id);
             sendJSON(response, HTTPResponse::HTTP_CREATED, res);
@@ -230,16 +234,15 @@ void BookingsHandler::handleRequest(HTTPServerRequest& request, HTTPServerRespon
         std::string uri = request.getURI();
         size_t pos = uri.find_last_of('/');
         if (pos != std::string::npos && pos < uri.length() - 1) {
-            std::string idStr = uri.substr(pos + 1);
+            std::string bookingId = uri.substr(pos + 1);
             try {
-                int bId = std::stoi(idStr);
-                if (Storage::instance().cancelBooking(bId)) {
+                if (Storage::instance().cancelBooking(bookingId)) {
                     sendJSON(response, HTTPResponse::HTTP_NO_CONTENT, new Object());
                 } else {
                     sendError(response, HTTPResponse::HTTP_NOT_FOUND, "Booking not found");
                 }
             } catch (...) {
-                sendError(response, HTTPResponse::HTTP_BAD_REQUEST, "Invalid ID");
+                sendError(response, HTTPResponse::HTTP_BAD_REQUEST, "Invalid booking ID");
             }
         } else {
              sendError(response, HTTPResponse::HTTP_BAD_REQUEST, "ID required");

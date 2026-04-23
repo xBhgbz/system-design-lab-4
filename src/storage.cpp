@@ -31,7 +31,7 @@ static std::string hashPassword(const std::string& password) {
 
 static bool verifyPassword(const std::string& password, const std::string& hash) {
     std::string computedHash = hashPassword(password);
-    // Удаляем кавычки, если они есть
+
     std::string cleanHash = hash;
     if (!cleanHash.empty() && cleanHash.front() == '"' && cleanHash.back() == '"') {
         cleanHash = cleanHash.substr(1, cleanHash.size() - 2);
@@ -107,8 +107,6 @@ int Storage::createUser(const std::string& login, const std::string& pass, const
         doc.add("password", hashPassword(pass));
         doc.add("firstName", fn);
         doc.add("lastName", ln);
-        // doc.add("createdAt", Poco::Timestamp().epochTime());
-        // doc.add("updatedAt", Poco::Timestamp().epochTime());
         
         _connection->sendRequest(*insertRequest);
         std::string lastError = _database->getLastError(*_connection);
@@ -224,8 +222,6 @@ int Storage::createHotel(const std::string& name, const std::string& city, int s
         doc.add("name", name);
         doc.add("city", city);
         doc.add("stars", stars);
-        // doc.add("createdAt", Poco::Timestamp().epochTime());
-        // doc.add("updatedAt", Poco::Timestamp().epochTime());
         
         _connection->sendRequest(*insertRequest);
         std::string lastError = _database->getLastError(*_connection);
@@ -298,29 +294,31 @@ std::vector<Hotel> Storage::findHotelsByCity(const std::string& city) {
     }
 }
 
-int Storage::createBooking(int userId, int hotelId, const std::string& start, const std::string& end) {
+std::string Storage::createBooking(int userId, int hotelId, const std::string& start, const std::string& end) {
     try {
+        Poco::UUID bookingUuid = Poco::UUIDGenerator::defaultGenerator().createRandom();
+        std::string bookingId = bookingUuid.toString();
+        
         Poco::SharedPtr<InsertRequest> insertRequest = _database->createInsertRequest("bookings");
         Document& doc = insertRequest->addNewDocument();
+        doc.add("id", bookingId);
         doc.add("userId", userId);
         doc.add("hotelId", hotelId);
         doc.add("startDate", start);
         doc.add("endDate", end);
         doc.add("cancelled", false);
-        // doc.add("createdAt", Poco::Timestamp().epochTime());
-        // doc.add("updatedAt", Poco::Timestamp().epochTime());
         
         _connection->sendRequest(*insertRequest);
         std::string lastError = _database->getLastError(*_connection);
         if (!lastError.empty()) {
             std::cerr << "mongodb Last Error: " << lastError << std::endl;
-            return -1;
+            return "";
         }
         
-        return 1;
+        return bookingId;
     } catch (const std::exception& e) {
         std::cerr << "Error creating booking: " << e.what() << std::endl;
-        return -1;
+        return "";
     }
 }
 
@@ -337,9 +335,8 @@ std::vector<Booking> Storage::getUserBookings(int userId) {
         for (const auto& doc : response.documents()) {
             Booking b;
             
-            // Generate ID from the document's _id
-            std::string idStr = getStringFromDoc(doc, "_id");
-            b.id = idStr.empty() ? 0 : std::hash<std::string>{}(idStr) % INT_MAX;
+            std::string idStr = getStringFromDoc(doc, "id");
+            b.id = idStr;
             b.userId = userId;
             b.hotelId = getIntFromDoc(doc, "hotelId");
             b.startDate = getStringFromDoc(doc, "startDate");
@@ -356,9 +353,24 @@ std::vector<Booking> Storage::getUserBookings(int userId) {
     }
 }
 
-bool Storage::cancelBooking(int bookingId) {
+bool Storage::cancelBooking(const std::string& bookingId) {
     try {
-        // This needs proper implementation with booking ID lookup
+        Poco::SharedPtr<UpdateRequest> updateRequest = _database->createUpdateRequest("bookings");
+        updateRequest->selector().add("id", bookingId);
+        
+        Document::Ptr updateDoc = new Document();
+        updateDoc->add("cancelled", true);
+        
+        updateRequest->update().add("$set", updateDoc);
+        
+        _connection->sendRequest(*updateRequest);
+        
+        std::string lastError = _database->getLastError(*_connection);
+        if (!lastError.empty()) {
+            std::cerr << "mongodb Last Error: " << lastError << std::endl;
+            return false;
+        }
+        
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Error cancelling booking: " << e.what() << std::endl;
@@ -375,7 +387,6 @@ std::string Storage::createSession(int userId) {
         Document& doc = insertRequest->addNewDocument();
         doc.add("_id", token);
         doc.add("userId", userId);
-        // doc.add("createdAt", Poco::Timestamp().epochTime());
         
         _connection->sendRequest(*insertRequest);
         std::string lastError = _database->getLastError(*_connection);

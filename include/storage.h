@@ -26,7 +26,7 @@ struct Hotel {
 };
 
 struct Booking {
-    int id;
+    std::string id;
     int userId;
     int hotelId;
     std::string startDate;
@@ -51,10 +51,10 @@ public:
     std::vector<Hotel> getAllHotels();
     std::vector<Hotel> findHotelsByCity(const std::string& city);
 
-    int createBooking(int userId, int hotelId, const std::string& start, const std::string& end);
+    std::string createBooking(int userId, int hotelId, const std::string& start, const std::string& end);
 
     std::vector<Booking> getUserBookings(int userId);
-    bool cancelBooking(int bookingId);
+    bool cancelBooking(const std::string& bookingId);
 
     std::string createSession(int userId);
     int validateSession(const std::string& token);
